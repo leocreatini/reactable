@@ -356,172 +356,184 @@ export class Table extends React.Component {
     }
 
     render() {
-        let children = [];
-        let columns;
-        let userColumnsSpecified = false;
-        let showHeaders = typeof this.props.hideTableHeader === 'undefined';
+      let children = [];
+      let columns;
+      let userColumnsSpecified = false;
+      let showHeaders = typeof this.props.hideTableHeader === 'undefined';
 
-        let firstChild = null;
+      let firstChild = null;
 
+      if (this.props.children) {
+          if (
+              this.props.children.length > 0 &&
+              this.props.children[0] &&
+              this.props.children[0].type === Thead
+          ) {
+              firstChild = this.props.children[0]
+          } else if (
+              this.props.children.type === Thead
+          ) {
+              firstChild = this.props.children
+          }
+      }
 
-        if (this.props.children) {
-            if (
-                this.props.children.length > 0 &&
-                this.props.children[0] &&
-                this.props.children[0].type === Thead
-            ) {
-                firstChild = this.props.children[0]
-            } else if (
-                this.props.children.type === Thead
-            ) {
-                firstChild = this.props.children
-            }
+      if (firstChild !== null) {
+          columns = Thead.getColumns(firstChild);
+      } else {
+          columns = this.props.columns || [];
+      }
+
+      if (columns.length > 0) {
+          userColumnsSpecified = true;
+          columns = this.translateColumnsArray(columns);
+      }
+
+      // Build up table rows
+      if (this.data && typeof this.data.map === 'function') {
+          // Build up the columns array
+          children = children.concat(this.data.map(function(rawData, i) {
+              let data = rawData;
+              let props = {};
+              if (rawData.__reactableMeta === true) {
+                  data = rawData.data;
+                  props = rawData.props;
+              }
+
+              // Loop through the keys in each data row and build a td for it
+              for (let k in data) {
+                  if (data.hasOwnProperty(k)) {
+                      // Update the columns array with the data's keys if columns were not
+                      // already specified
+                      if (userColumnsSpecified === false) {
+                          let column = {
+                              key:   k,
+                              label: k
+                          };
+
+                          // Only add a new column if it doesn't already exist in the columns array
+                          if (
+                              columns.find(function(element) {
+                              return element.key === column.key;
+                          }) === undefined
+                          ) {
+                              columns.push(column);
+                          }
+                      }
+                  }
+              }
+
+              return (
+                  <Tr columns={columns} key={i} data={data} {...props} />
+              );
+          }.bind(this)));
+      }
+
+      if (this.props.sortable === true) {
+          for (let i = 0; i < columns.length; i++) {
+              this._sortable[columns[i].key] = 'default';
+          }
+      }
+
+      // Determine if we render the filter box
+      let filtering = false;
+      if (
+        this.props.filterable &&
+        Array.isArray(this.props.filterable) &&
+        this.props.filterable.length > 0 &&
+        !this.props.hideFilterInput
+      ) {
+        filtering = true;
+      }
+
+      // Apply filters
+      let filteredChildren = children;
+      if (this.state.filter !== '') {
+        filteredChildren = this
+          .applyFilter(this.state.filter, filteredChildren);
+      }
+
+      // Determine pagination properties and which columns to display
+      let itemsPerPage = 0;
+      let pagination = false;
+      let numPages;
+      let currentPage = this.state.currentPage;
+      let pageButtonLimit = this.props.pageButtonLimit || 10;
+
+      let currentChildren = filteredChildren;
+      if (this.props.itemsPerPage > 0) {
+        itemsPerPage = this.props.itemsPerPage;
+        numPages = Math.ceil(filteredChildren.length / itemsPerPage);
+
+        if (currentPage > numPages - 1) {
+          currentPage = numPages - 1;
         }
 
-        if (firstChild !== null) {
-            columns = Thead.getColumns(firstChild);
-        } else {
-            columns = this.props.columns || [];
+        if (numPages > 1) {
+          pagination = true;
         }
 
-        if (columns.length > 0) {
-            userColumnsSpecified = true;
-            columns = this.translateColumnsArray(columns);
-        }
+        currentChildren = filteredChildren.slice(
+          currentPage * itemsPerPage,
+          (currentPage + 1) * itemsPerPage
+        );
+      }
 
-        // Build up table rows
-        if (this.data && typeof this.data.map === 'function') {
-            // Build up the columns array
-            children = children.concat(this.data.map(function(rawData, i) {
-                let data = rawData;
-                let props = {};
-                if (rawData.__reactableMeta === true) {
-                    data = rawData.data;
-                    props = rawData.props;
+      // Manually transfer props
+      let props = filterPropsFrom(this.props);
+
+      let noDataText = this.props.noDataText
+        ? (
+          <tr className="reactable-no-data">
+            <td colSpan={columns.length}>{this.props.noDataText}</td>
+          </tr>)
+        : null;
+
+      var tableHeader = null;
+      if (columns && columns.length > 0 && showHeaders) {
+        tableHeader = (
+          <Thead columns={columns}
+            filtering={filtering}
+            onFilter={filter => {
+              this.setState({ filter: filter });
+              if (this.props.onFilter) {
+                this.props.onFilter(filter)
+              }
+            }}
+            filterPlaceholder={this.props.filterPlaceholder}
+            filterClassName={this.props.filterClassName}
+            currentFilter={this.state.filter}
+            sort={this.state.currentSort}
+            sortableColumns={this._sortable}
+            onSort={this.onSort.bind(this)}
+          key="thead"/>
+        )
+      }
+      return (
+        <table {...props}>
+          {tableHeader}
+          <tbody className="reactable-data" key="tbody">
+            {currentChildren.length > 0 ? currentChildren : noDataText}
+          </tbody>
+          {pagination === true ?
+            <Paginator
+              colSpan={columns.length}
+              pageButtonLimit={pageButtonLimit}
+              numPages={numPages}
+              currentPage={currentPage}
+              onPageChange={page => {
+                this.setState({ currentPage: page });
+                if (this.props.onPageChange) {
+                  this.props.onPageChange(page)
                 }
-
-                // Loop through the keys in each data row and build a td for it
-                for (let k in data) {
-                    if (data.hasOwnProperty(k)) {
-                        // Update the columns array with the data's keys if columns were not
-                        // already specified
-                        if (userColumnsSpecified === false) {
-                            let column = {
-                                key:   k,
-                                label: k
-                            };
-
-                            // Only add a new column if it doesn't already exist in the columns array
-                            if (
-                                columns.find(function(element) {
-                                return element.key === column.key;
-                            }) === undefined
-                            ) {
-                                columns.push(column);
-                            }
-                        }
-                    }
-                }
-
-                return (
-                    <Tr columns={columns} key={i} data={data} {...props} />
-                );
-            }.bind(this)));
-        }
-
-        if (this.props.sortable === true) {
-            for (let i = 0; i < columns.length; i++) {
-                this._sortable[columns[i].key] = 'default';
-            }
-        }
-
-        // Determine if we render the filter box
-        let filtering = false;
-        if (
-            this.props.filterable &&
-                Array.isArray(this.props.filterable) &&
-                    this.props.filterable.length > 0 &&
-                        !this.props.hideFilterInput
-        ) {
-            filtering = true;
-        }
-
-        // Apply filters
-        let filteredChildren = children;
-        if (this.state.filter !== '') {
-            filteredChildren = this.applyFilter(this.state.filter, filteredChildren);
-        }
-
-        // Determine pagination properties and which columns to display
-        let itemsPerPage = 0;
-        let pagination = false;
-        let numPages;
-        let currentPage = this.state.currentPage;
-        let pageButtonLimit = this.props.pageButtonLimit || 10;
-
-        let currentChildren = filteredChildren;
-        if (this.props.itemsPerPage > 0) {
-            itemsPerPage = this.props.itemsPerPage;
-            numPages = Math.ceil(filteredChildren.length / itemsPerPage);
-
-            if (currentPage > numPages - 1) {
-                currentPage = numPages - 1;
-            }
-
-            pagination = true;
-            currentChildren = filteredChildren.slice(
-                currentPage * itemsPerPage,
-                (currentPage + 1) * itemsPerPage
-            );
-        }
-
-        // Manually transfer props
-        let props = filterPropsFrom(this.props);
-
-        let noDataText = this.props.noDataText ? <tr className="reactable-no-data"><td colSpan={columns.length}>{this.props.noDataText}</td></tr> : null;
-
-        var tableHeader = null;
-        if (columns && columns.length > 0 && showHeaders) {
-            tableHeader = (
-                <Thead columns={columns}
-                       filtering={filtering}
-                       onFilter={filter => {
-                     this.setState({ filter: filter });
-                     if (this.props.onFilter) {
-                        this.props.onFilter(filter)
-                     }
-                 }}
-                       filterPlaceholder={this.props.filterPlaceholder}
-                       filterClassName={this.props.filterClassName}
-                       currentFilter={this.state.filter}
-                       sort={this.state.currentSort}
-                       sortableColumns={this._sortable}
-                       onSort={this.onSort.bind(this)}
-                       key="thead"/>
-            )
-        }
-        return <table {...props}>
-            {tableHeader}
-            <tbody className="reactable-data" key="tbody">
-                {currentChildren.length > 0 ? currentChildren : noDataText}
-            </tbody>
-            {pagination === true ?
-             <Paginator colSpan={columns.length}
-                 pageButtonLimit={pageButtonLimit}
-                 numPages={numPages}
-                 currentPage={currentPage}
-                 onPageChange={page => {
-                     this.setState({ currentPage: page });
-                     if (this.props.onPageChange) {
-                        this.props.onPageChange(page)
-                     }
-                 }}
-                 previousPageLabel={this.props.previousPageLabel}
-                 nextPageLabel={this.props.nextPageLabel}
-                 key="paginator"/>
-             : null}
-            {this.tfoot}
-        </table>;
+              }}
+              previousPageLabel={this.props.previousPageLabel}
+              nextPageLabel={this.props.nextPageLabel}
+              key="paginator"
+            />
+          : null}
+          {this.tfoot}
+        </table>
+      );
     }
 }
 
